@@ -1,0 +1,16 @@
+[theme]
+baseFontSize = 20
+font = "montserrat:https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap"
+primaryColor = "#00A86B"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
+
+headingFontSizes = [
+  "2.5rem",  # h1
+  "2rem",    # h2
+  "1.75rem", # h3
+  "1.5rem",  # h4
+  "1.25rem", # h5
+  "1rem"     # h6
+]
