@@ -44,5 +44,5 @@ htmlcov/
 .nox/
 
 # Optional: ignore large data (remove these lines if you version the dataset)
-data/
+#data/
 #*.csv
