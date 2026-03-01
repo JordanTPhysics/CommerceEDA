@@ -24,7 +24,7 @@ def analysis_span(text: str, title: str = "Analysis") -> None:
         return
     safe = escape(text.strip()).replace("\n", "<br>")
     st.markdown(
-        f'<div style="background:#f8f9fa; color:#111111; border-left:4px solid #1f77b4; padding:0.75rem 1rem; margin:0.5rem 0; border-radius:0 4px 4px 0;"><small style="color:#111111; font-weight:600;">{title}</small><br>{safe}</div>',
+        f'<div style="background:#18191a; color:#ffffff; border-left:4px solid #1f77b4; padding:0.75rem 1rem; margin:0.5rem 0; border-radius:0 4px 4px 0;"><small style="color:#fafdfe; font-weight:600;">{title}</small><br>{safe}</div>',
         unsafe_allow_html=True,
     )
 
@@ -77,7 +77,7 @@ def get_top_items_per_period():
     return pd.concat(rows, ignore_index=True)[["Year", "Month", "Rank", "Item", "Quantity sold"]]
 
 
-#@st.cache_data
+@st.cache_data
 def get_rfm(df: pd.DataFrame):
     """Cached RFM segmentation from main dataset (uses Revenue for Monetary)."""
     return compute_rfm(df, monetary_col="Revenue")
@@ -474,13 +474,13 @@ if customer_id_input and customer_id_input.strip():
                 "InvoiceDate": ("InvoiceDate", "first"),
                 "Revenue": ("Revenue", "sum"),
                 "Country": ("Country", "first"),
-                "Lines": ("StockCode", "count"),
+                "Unique Items": ("StockCode", "count"),
             }
             cust_invoices = cust_df.groupby("Invoice").agg(**inv_agg).sort_values("InvoiceDate")
             cust_invoices = cust_invoices.reset_index()
             st.dataframe(
                 cust_invoices.style.format(
-                    {"Revenue": "£{:,.2f}", "Lines": "{:,.0f}"},
+                    {"Revenue": "£{:,.2f}", "Unique Items": "{:,.0f}"},
                     thousands=",",
                 ),
                 use_container_width=True,
