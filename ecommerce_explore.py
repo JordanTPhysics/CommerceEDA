@@ -1,10 +1,13 @@
+import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from html import escape
 
-from customer_rfm import compute_rfm
+from streamlit import config
+
+from customer_rfm import compute_rfm, _is_credit_invoice
 
 st.set_page_config(page_title="E-commerce Dashboard", layout="wide")
 
@@ -16,12 +19,12 @@ ANALYSIS_TRENDS_WEEKLY = "Not much stands out on the weekly chart, but it seems 
 ANALYSIS_TRENDS_HOURLY = "We've seen hints at the large contribution of wholesale orders to the total revenue but this chart makes it clear with jumps in revenue at 10am and 3pm while orders remain steady"
 
 
-def analysis_span(text: str) -> None:
+def analysis_span(text: str, title: str = "Analysis") -> None:
     if not text.strip():
         return
     safe = escape(text.strip()).replace("\n", "<br>")
     st.markdown(
-        f'<div style="background:#f8f9fa; color:#111111; border-left:4px solid #1f77b4; padding:0.75rem 1rem; margin:0.5rem 0; border-radius:0 4px 4px 0;"><small style="color:#111111; font-weight:600;">Analysis</small><br>{safe}</div>',
+        f'<div style="background:#f8f9fa; color:#111111; border-left:4px solid #1f77b4; padding:0.75rem 1rem; margin:0.5rem 0; border-radius:0 4px 4px 0;"><small style="color:#111111; font-weight:600;">{title}</small><br>{safe}</div>',
         unsafe_allow_html=True,
     )
 
@@ -30,9 +33,9 @@ st.title("E-commerce Data Exploration")
 
 st.divider()
 
-head1, head2 = st.columns([4, 1])
-with head1: st.write("Exploratory Data Analysis of E-commerce Data from Kaggle, by Jordan"),
-with head2: st.link_button("Dataset", "https://www.kaggle.com/datasets/saurabhbadole/supermarket-data")
+
+analysis_span("Today I will showcase how much customer information can be gleaned from a dataset of transactions for an online retailer. Without knowing any personally identifiable information or demographic data, we will gain insight into the customers' spending habits, what they like and dislike, and growth opportunities for the store. " ,"Exploratory Data Analysis of E-commerce Data from Kaggle")
+st.link_button("Dataset", "https://www.kaggle.com/datasets/saurabhbadole/supermarket-data")
 # Load data
 @st.cache_data
 def load_data():
@@ -74,18 +77,25 @@ def get_top_items_per_period():
     return pd.concat(rows, ignore_index=True)[["Year", "Month", "Rank", "Item", "Quantity sold"]]
 
 
-@st.cache_data
-def get_rfm():
+#@st.cache_data
+def get_rfm(df: pd.DataFrame):
     """Cached RFM segmentation from main dataset (uses Revenue for Monetary)."""
-    df = load_data()
     return compute_rfm(df, monetary_col="Revenue")
 
 
 df = load_data()
-#st.sidebar.title("Filters")
-#country_filter = st.sidebar.multiselect("Select Country", df["Country"].unique())
 
-#df = df[df["Country"].isin(country_filter)] if country_filter else df
+# Only include customers whose total revenue (across all invoices) is >= 0
+customer_total_revenue = df.groupby("Customer ID")["Revenue"].sum()
+customers_non_negative = customer_total_revenue[customer_total_revenue >= 0].index
+invoice_df = df[(df["Customer ID"] != "") & (df["Customer ID"].isin(customers_non_negative))]
+invoice_agg = {
+    "Invoice": ("Invoice", "first"),
+    "Revenue": ("Revenue", "sum"),
+    "Customer ID": ("Customer ID", "first"),
+    "InvoiceDate": ("InvoiceDate", "first"),
+}
+invoice_df = invoice_df.groupby("Invoice").agg(**invoice_agg)
 
 periods = (
     df[["Year", "Month"]].drop_duplicates().sort_values(["Year", "Month"]).astype(int)
@@ -99,14 +109,14 @@ weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturd
 default_period_idx = len(period_list) - 1 if period_list else None
 
 by_country = (df.groupby("Country", as_index=False)
-    .agg(Orders=("Invoice", "nunique"), Revenue=("Revenue", "sum"))
+    .agg(Orders=("Invoice", "nunique"), Revenue=("Revenue", "sum"), Customers=("Customer ID", "nunique"))
     .sort_values("Revenue", ascending=False)
 )
 by_country["Average Order Value"] = by_country["Revenue"] / by_country["Orders"]
 
 by_month = (
     df.groupby(["Month"], as_index=False)
-    .agg(Orders=("Invoice", "nunique"), Revenue=("Revenue", "sum"))
+    .agg(Orders=("Invoice", "nunique"), Revenue=("Revenue", "sum"), Customers=("Customer ID", "nunique"))
 )
 by_month["MonthName"] = by_month["Month"].apply(lambda x: month_names[x - 1])
 
@@ -136,6 +146,15 @@ with col2: st.metric("Total revenue", f"£{df['Revenue'].sum():,.0f}")
 with col3: st.metric("Countries", by_country["Country"].nunique())
 with col4: st.metric("Average Order Value", f"£{by_country['Average Order Value'].mean():,.0f}")
 
+# Credit invoices overview
+is_credit = _is_credit_invoice(df["Invoice"])
+credit_df = df[is_credit]
+total_invoices_credited = credit_df["Invoice"].nunique()
+total_amount_credited = credit_df["Revenue"].sum()  # negative; display as positive "amount credited"
+st.subheader("Credits overview")
+cred_c1, cred_c2 = st.columns(2)
+with cred_c1: st.metric("Total invoices credited", f"{total_invoices_credited:,}")
+with cred_c2: st.metric("Total amount credited", f"£{abs(total_amount_credited):,.0f}")
 
 st.header("Orders and revenue by country")
 st.dataframe(
@@ -285,17 +304,17 @@ analysis_span(ANALYSIS_TRENDS_HOURLY)
 
 # --- Customer segmentation (RFM) ---
 st.divider()
-st.header("Customer segmentation")
+st.header("Customer Analysis")
 ANALYSIS_SEGMENTATION = ""
 
-rfm = get_rfm()
+rfm = get_rfm(invoice_df)
 
-# Overview metrics
 seg_counts = rfm.groupby("Segment", as_index=False).agg(
     Customers=("Customer ID", "count"),
-    Total_Monetary=("Monetary", "sum"),
+    Total_Monetary=("NetRevenue", "sum"),
+    Invoice_Cost_Avg=("NetRevenue", "mean"),
     Avg_Recency=("Recency", "mean"),
-    Avg_Frequency=("Frequency", "mean"),
+    Monthly_Invoices_Avg=("InvoicesPerMonth", "mean"),
 ).round(1)
 seg_counts = seg_counts.sort_values("Customers", ascending=False)
 
@@ -307,12 +326,12 @@ with c2:
 with c3:
     st.metric("Champions (555)", f"{len(rfm[rfm['Segment'] == 'Champions']):,}")
 with c4:
-    st.metric("Total segment value (£)", f"{rfm['Monetary'].sum():,.0f}")
+    st.metric("Total segment value (£)", f"{rfm['NetRevenue'].sum():,.0f}")
 
 st.subheader("Overview by segment")
 st.dataframe(
     seg_counts.style.format(
-        {"Customers": "{:,.0f}", "Total_Monetary": "£{:,.0f}", "Avg_Recency": "{:.1f}", "Avg_Frequency": "{:.1f}"},
+        {"Customers": "{:,.0f}", "Total_Monetary": "£{:,.0f}", "Invoice_Cost_Avg": "£{:,.0f}", "Avg_Recency": "{:.1f}", "Monthly_Invoices_Avg": "{:.1f}"},
         thousands=",",
     ),
     width='stretch',
@@ -329,23 +348,54 @@ with seg_pie_col:
         hole=0.2,
     )
     fig_seg_pie.update_layout(height=420)
-    st.plotly_chart(fig_seg_pie, width='stretch')
+    st.plotly_chart(
+        fig_seg_pie,
+        width='stretch',
+        config={"color_discrete_sequence": px.colors.qualitative.Set2}
+    )
+
+if "plot_type" not in st.session_state:
+    st.session_state["plot_type"] = "linear"
+
+def toggle_log_scale():
+    st.session_state["plot_type"] = "log" if st.session_state["plot_type"] == "linear" else "linear"
 
 with seg_3d_col:
+    rfm_log = rfm.assign(
+        log_Recency=np.log1p(rfm["Recency"]),
+        log_Frequency=np.log1p(rfm["InvoicesPerMonth"]),
+        log_Monetary=np.log1p(rfm["InvoiceAverage"]),
+    )
+    chart_df = rfm_log if st.session_state["plot_type"] == "log" else rfm
     fig_rfm_3d = px.scatter_3d(
-        rfm,
-        x="Recency",
-        y="Frequency",
-        z="Monetary",
+        chart_df,
+        x="log_Recency" if st.session_state["plot_type"] == "log" else "Recency",
+        y="log_Frequency" if st.session_state["plot_type"] == "log" else "InvoicesPerMonth",
+        z="log_Monetary" if st.session_state["plot_type"] == "log" else "InvoiceAverage",
         color="Segment",
-        title="RFM space by segment",
-        labels={"Recency": "Recency (days)", "Frequency": "Frequency", "Monetary": "Monetary (£)"},
+        title=f"RFM space by segment {'(log scale)' if st.session_state['plot_type'] == 'log' else ''}",
+        labels={
+            "Recency": "Recency",
+            "InvoicesPerMonth": "Invoices per month",
+            "InvoiceAverage": "Average invoice value",
+            "log_Recency": "log(1 + Recency)",
+            "log_Frequency": "log(1 + InvoicesPerMonth)",
+            "log_Monetary": "log(1 + InvoiceAverage)",
+        },
+        hover_data={
+            "Customer ID": True,
+            "Segment": True,
+            "R_score": True,
+            "F_score": True,
+            "M_score": True,
+        },
         color_discrete_sequence=px.colors.qualitative.Set2,
         opacity=0.7,
     )
     fig_rfm_3d.update_traces(marker=dict(size=3))
     fig_rfm_3d.update_layout(height=420, margin=dict(l=0, r=0, b=0, t=40))
     st.plotly_chart(fig_rfm_3d, width='stretch')
+    st.button("Log scale" if st.session_state["plot_type"] == "linear" else "Linear scale", on_click=toggle_log_scale)
 
 st.subheader("Segment definitions")
 st.markdown(
@@ -357,3 +407,83 @@ st.markdown(
     "- **Others**: Middle ground; encourage with targeted offers."
 )
 analysis_span(ANALYSIS_SEGMENTATION)
+
+with st.expander("Debug: Customer Search", expanded=True):
+    rfm_view = rfm.copy()
+    seg_options = sorted(rfm["Segment"].unique().tolist())
+    segments_filter = st.multiselect(
+        "Segment",
+        options=seg_options,
+        default=seg_options,
+        key="rfm_debug_segment",
+    )
+    rfm_view = rfm_view[rfm_view["Segment"].isin(segments_filter)]
+    debug_cid = st.text_input("Customer ID (optional)", placeholder="e.g. 17850", key="rfm_debug_cid")
+    if debug_cid and debug_cid.strip():
+        try:
+            cid_filter = int(debug_cid.strip())
+            rfm_view = rfm_view[rfm_view["Customer ID"] == cid_filter]
+        except ValueError:
+            st.caption("Customer ID must be a number; showing all segments above.")
+    col_rec, col_val = st.columns(2)
+    with col_rec:
+        rec_min, rec_max = int(rfm["Recency"].min()), int(rfm["Recency"].max())
+        rec_range = st.slider("Recency (days)", rec_min, rec_max, (rec_min, rec_max), key="rfm_debug_recency")
+        rfm_view = rfm_view[(rfm_view["Recency"] >= rec_range[0]) & (rfm_view["Recency"] <= rec_range[1])]
+    with col_val:
+        val_min, val_max = int(rfm["NetRevenue"].min()), int(rfm["NetRevenue"].max())
+        val_range = st.slider("NetRevenue (£)", val_min, val_max, (val_min, val_max), key="rfm_debug_value")
+        rfm_view = rfm_view[(rfm_view["NetRevenue"] >= val_range[0]) & (rfm_view["NetRevenue"] <= val_range[1])]
+    st.caption(f"Showing {len(rfm_view):,} of {len(rfm):,} customers.")
+    st.dataframe(
+        rfm_view.style.format(
+            {"Customer ID": "{:,.0f}", "NetRevenue": "£{:,.0f}", "InvoiceAverage": "£{:,.2f}", "MonthsActive": "{:.2f}", "InvoicesPerMonth": "{:.2f}", "Recency": "{:.0f}"},
+            thousands=",",
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+st.subheader("Customer search")
+customer_id_input = st.text_input("Customer ID", placeholder="e.g. 17850", key="customer_search_id")
+if customer_id_input and customer_id_input.strip():
+    try:
+        search_cid = int(customer_id_input.strip())
+    except ValueError:
+        st.warning("Please enter a numeric Customer ID.")
+    else:
+        cust_df = df[df["Customer ID"] == search_cid]
+        if cust_df.empty:
+            st.info(f"No data found for Customer ID **{search_cid}**.")
+        else:
+            cust_is_credit = _is_credit_invoice(cust_df["Invoice"])
+            cust_sales = cust_df[~cust_is_credit]
+            cust_credits = cust_df[cust_is_credit]
+            net_value = cust_df["Revenue"].sum()
+            num_purchases = cust_sales["Invoice"].nunique()
+            num_credits = cust_credits["Invoice"].nunique()
+            amount_credited = cust_credits["Revenue"].sum()
+            m1, m2, m3, m4 = st.columns(4)
+            with m1: st.metric("Total value (net)", f"£{net_value:,.0f}")
+            with m2: st.metric("Invoices", f"{num_purchases:,}")
+            with m3: st.metric("Credits", f"{num_credits:,}")
+            with m4: st.metric("Total credited", f"£{abs(amount_credited):,.0f}")
+
+            st.subheader("Invoices for this customer")
+            inv_agg = {
+                "InvoiceDate": ("InvoiceDate", "first"),
+                "Revenue": ("Revenue", "sum"),
+                "Country": ("Country", "first"),
+                "Lines": ("StockCode", "count"),
+            }
+            cust_invoices = cust_df.groupby("Invoice").agg(**inv_agg).sort_values("InvoiceDate")
+            cust_invoices = cust_invoices.reset_index()
+            st.dataframe(
+                cust_invoices.style.format(
+                    {"Revenue": "£{:,.2f}", "Lines": "{:,.0f}"},
+                    thousands=",",
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
