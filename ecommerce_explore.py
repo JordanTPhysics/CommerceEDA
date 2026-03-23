@@ -17,7 +17,7 @@ ANALYSIS_TOP_ITEMS = "Popular items change regularly with a few repeat winners, 
 ANALYSIS_TRENDS_MONTHLY = "Monthly trends show a clear rise in orders and revenue over the course of a year, peaking in November just before the holiday season, there's also some interesting activity as the UK tax year comes to an end, suggesting procurement teams clearing their budget surplus"
 ANALYSIS_TRENDS_WEEKLY = "Not much stands out on the weekly chart, but it seems clear the shop isn't open on Saturday, but is open on Sunday, the least profitable day of the week. It probably makes more sense to switch these 2 days to avoid losing revenue to competition"
 ANALYSIS_TRENDS_HOURLY = "We've seen hints at the large contribution of wholesale orders to the total revenue but this chart makes it clear with jumps in revenue at 10am and 3pm while orders remain steady"
-
+ANALYSIS_SEGMENTATION = "Champions tend to be the wholesale orders, they are most loyal, spend the most money and make regular purchases, of all groups they contribute most to revenue while being only 2% of customers Consider giving discounts on wholesale orders to reward these loyal customers. Over half of the customers are new or unidentified and also contribute a lot of the revenue, it would be interesting to see the products they buy and create offers that make them loyal customers. At risk and lost customers are about 25% of the customer base but contribute less to revenue than any other group even when combined."
 
 def analysis_span(text: str, title: str = "Analysis") -> None:
     if not text.strip():
@@ -35,7 +35,13 @@ st.divider()
 
 
 analysis_span("Today I will showcase how much customer information can be gleaned from a dataset of transactions for an online retailer. Without knowing any personally identifiable information or demographic data, we will gain insight into the customers' spending habits, what they like and dislike, and growth opportunities for the store. " ,"Exploratory Data Analysis of E-commerce Data from Kaggle")
-st.link_button("Dataset", "https://www.kaggle.com/datasets/saurabhbadole/supermarket-data")
+
+link1, link2, space = st.columns([1,1,4])
+with link1:
+    st.link_button("Dataset", "https://www.kaggle.com/datasets/saurabhbadole/supermarket-data")
+with link2:
+    st.link_button("GitHub", "https://github.com/JordanTPhysics/CommerceEDA")
+
 # Load data
 @st.cache_data
 def load_data():
@@ -305,7 +311,7 @@ analysis_span(ANALYSIS_TRENDS_HOURLY)
 # --- Customer segmentation (RFM) ---
 st.divider()
 st.header("Customer Analysis")
-ANALYSIS_SEGMENTATION = ""
+
 
 rfm = get_rfm(invoice_df)
 
@@ -407,6 +413,18 @@ st.markdown(
     "- **Others**: Middle ground; encourage with targeted offers."
 )
 analysis_span(ANALYSIS_SEGMENTATION)
+
+st.divider()
+st.header("Exploratory Data Analysis Summary")
+
+analysis_span("This data app gives a surface level analysis of the strengths and weaknesses of this Wholesaler. There is potential to look more deeply into the data and customer trends to increase sales and revenue. If you're interested you can fork the GitHub and try some yourself:")
+st.markdown(
+   "1. Analyse the performance and prices of individual popular products over time to see when discounts are most effective\n"
+   "2. Devise a way to categorise products into groups based on being sold together or by the same customers, then seeing how product groups perform.\n"
+   "3. Add filtering to see how the data varies by country or product category, showing which countries are more successful and why.",
+   text_alignment="center",
+   width="content",
+)
 
 with st.expander("Debug: Customer Search", expanded=True):
     rfm_view = rfm.copy()
